@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Valyra creates realistic cosmetic facial preview images from one uploaded selfie.">
+    <title>Valyra</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Valyra home">
+        <span class="brand-mark">V</span>
+        <span>Valyra</span>
+      </a>
+
+      <nav class="nav-actions" aria-label="App actions">
+        <button class="icon-button" id="themeToggle" type="button" aria-label="Toggle theme" title="Toggle theme">
+          <span aria-hidden="true">◐</span>
+        </button>
+        <button class="ghost-button" id="clearSession" type="button">Clear</button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="upload-panel" id="uploadPanel" aria-labelledby="uploadTitle">
+        <div class="upload-copy">
+          <p class="eyebrow">AI facial preview studio</p>
+          <h1 id="uploadTitle">Five realistic previews from one selfie.</h1>
+          <p class="intro">Valyra uses subtle AI edits for essential cosmetic facial looks, then presents them in a polished gallery.</p>
+        </div>
+
+        <form class="dropzone" id="uploadForm">
+          <input id="selfieInput" name="selfie" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          <button class="drop-target" id="uploadButton" type="button">
+            <span class="upload-icon" aria-hidden="true">+</span>
+            <span class="drop-title">Choose a selfie</span>
+            <span class="drop-help">PNG, JPG, or WebP. One face works best.</span>
+          </button>
+        </form>
+
+        <div class="privacy-strip" aria-label="Privacy notes">
+          <span>18+ audience</span>
+          <span>No sign in</span>
+          <span>Server-side AI key</span>
+          <span>Local session only</span>
+        </div>
+      </section>
+
+      <section class="workspace hidden" id="workspace" aria-label="Generation workspace">
+        <aside class="side-panel">
+          <div class="original-card">
+            <img id="originalImage" alt="Uploaded selfie preview">
+            <div>
+              <p class="panel-label">Original selfie</p>
+              <p class="panel-note">Previews should preserve identity, lighting, pose, expression, and realism.</p>
+            </div>
+          </div>
+
+          <div class="control-stack">
+            <button class="primary-button" id="generateAll" type="button">Generate gallery</button>
+            <button class="ghost-button full" id="replacePhoto" type="button">Upload another photo</button>
+          </div>
+
+          <div class="filter-group" id="filterGroup" aria-label="Gallery filters"></div>
+
+          <div class="status-card">
+            <div class="status-row">
+              <span id="progressText">Ready</span>
+              <strong id="progressCount">0/5</strong>
+            </div>
+            <div class="progress-track" aria-hidden="true">
+              <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <p id="statusMessage">Generate five subtle, realistic facial preview images.</p>
+          </div>
+
+          <p class="disclaimer">Previews are AI simulations only. They are not medical advice and do not predict real cosmetic outcomes.</p>
+        </aside>
+
+        <section class="gallery-shell">
+          <div class="gallery-heading">
+            <div>
+              <p class="eyebrow">Generated looks</p>
+              <h2>Preview board</h2>
+            </div>
+            <button class="ghost-button" id="retryFailed" type="button">Retry failed</button>
+          </div>
+
+          <div class="masonry" id="gallery" aria-live="polite"></div>
+        </section>
+      </section>
+    </main>
+
+    <dialog class="result-dialog" id="resultDialog">
+      <button class="dialog-close" id="closeDialog" type="button" aria-label="Close">×</button>
+      <div class="dialog-grid">
+        <div class="compare-card">
+          <p>Original</p>
+          <img id="dialogOriginal" alt="Original selfie">
+        </div>
+        <div class="compare-card">
+          <p id="dialogTitle">Preview</p>
+          <img id="dialogPreview" alt="Generated preview">
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button class="primary-button" id="downloadResult" type="button">Save image</button>
+        <button class="ghost-button" id="regenerateResult" type="button">Regenerate this look</button>
+      </div>
+    </dialog>
+
+    <template id="tileTemplate">
+      <article class="tile">
+        <div class="tile-media">
+          <img class="tile-image" alt="">
+          <div class="tile-placeholder">
+            <div class="spinner"></div>
+          </div>
+          <button class="save-button" type="button">Save</button>
+        </div>
+        <div class="tile-meta">
+          <span class="tile-title"></span>
+          <span class="tile-category"></span>
+        </div>
+      </article>
+    </template>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
