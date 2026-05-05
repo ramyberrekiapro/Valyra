@@ -94,6 +94,16 @@
 
     <dialog class="result-dialog" id="resultDialog">
       <button class="dialog-close" id="closeDialog" type="button" aria-label="Close">×</button>
+      <div class="compare-viewer" id="compareViewer">
+        <img class="compare-before" id="compareBefore" alt="Original selfie">
+        <div class="compare-after-wrap" id="compareAfterWrap">
+          <img class="compare-after" id="compareAfter" alt="Generated preview">
+        </div>
+        <span class="compare-label before-label">Before</span>
+        <span class="compare-label after-label">After</span>
+        <span class="compare-divider" id="compareDivider" aria-hidden="true"></span>
+        <input class="compare-slider" id="compareSlider" type="range" min="0" max="100" value="50" aria-label="Compare original and generated preview">
+      </div>
       <div class="dialog-grid">
         <div class="compare-card">
           <p>Original</p>

@@ -1,7 +1,6 @@
 const MODEL = "google/gemini-3.1-flash-image-preview";
 const STORAGE_KEY = "valyra.session.v1";
 const MAX_UPLOAD_SIZE = 8 * 1024 * 1024;
-const CONCURRENCY = 1;
 
 const looks = [
   {
@@ -57,6 +56,8 @@ const state = {
   serverConfigured: null
 };
 
+const activeGenerations = new Map();
+
 const elements = {
   uploadPanel: document.querySelector("#uploadPanel"),
   workspace: document.querySelector("#workspace"),
@@ -78,6 +79,11 @@ const elements = {
   retryFailed: document.querySelector("#retryFailed"),
   dialog: document.querySelector("#resultDialog"),
   closeDialog: document.querySelector("#closeDialog"),
+  compareBefore: document.querySelector("#compareBefore"),
+  compareAfter: document.querySelector("#compareAfter"),
+  compareAfterWrap: document.querySelector("#compareAfterWrap"),
+  compareDivider: document.querySelector("#compareDivider"),
+  compareSlider: document.querySelector("#compareSlider"),
   dialogOriginal: document.querySelector("#dialogOriginal"),
   dialogPreview: document.querySelector("#dialogPreview"),
   dialogTitle: document.querySelector("#dialogTitle"),
@@ -122,6 +128,7 @@ function bindEvents() {
   elements.clearSession.addEventListener("click", clearSession);
   elements.themeToggle.addEventListener("click", toggleTheme);
   elements.closeDialog.addEventListener("click", () => elements.dialog.close());
+  elements.compareSlider.addEventListener("input", updateComparePosition);
   elements.downloadResult.addEventListener("click", downloadSelected);
   elements.regenerateResult.addEventListener("click", regenerateSelected);
   elements.dialog.addEventListener("click", (event) => {
@@ -191,79 +198,98 @@ function loadImage(src) {
   });
 }
 
-async function generateLooks(targets) {
-  if (!state.selfie || state.generating || targets.length === 0) return;
+function generateLooks(targets) {
+  if (!state.selfie || targets.length === 0) return;
 
   if (state.serverConfigured === false) {
     setStatus("Add OPENROUTER_API_KEY to .env, restart the server, then generate the gallery.", "Setup needed");
     return;
   }
 
-  state.generating = true;
-  elements.generateAll.disabled = true;
-  elements.retryFailed.disabled = true;
-  setStatus("Generating 5 realistic previews with Nano Banana 2...", "Generating");
+  const nextTargets = targets.filter((target) => !activeGenerations.has(target.id));
 
-  const queue = [...targets];
-  const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => runGenerationWorker(queue));
+  if (nextTargets.length === 0) return;
 
-  await Promise.allSettled(workers);
+  setStatus(`Starting ${nextTargets.length} separate OpenRouter calls...`, "Generating");
 
-  state.generating = false;
-  elements.generateAll.disabled = false;
-  elements.retryFailed.disabled = false;
-
-  const failed = state.results.filter((result) => result.status === "failed").length;
-  const firstFailure = state.results.find((result) => result.status === "failed" && result.error);
-  setStatus(
-    failed
-      ? `${failed} previews failed. ${firstFailure?.error || "You can retry them."}`
-      : "Gallery complete. Open any tile to compare with the original.",
-    failed ? "Needs retry" : "Complete"
-  );
-  saveSession();
-  render();
-}
-
-async function runGenerationWorker(queue) {
-  while (queue.length) {
-    const target = queue.shift();
-    await generateSingle(target.id);
+  for (const target of nextTargets) {
+    generateSingle(target.id, state.selfie);
   }
 }
 
-async function generateSingle(id) {
+async function generateSingle(id, selfieSnapshot) {
   const result = state.results.find((item) => item.id === id);
   if (!result) return;
 
+  const generationToken = createGenerationToken();
+  activeGenerations.set(id, generationToken);
   updateResult(id, { status: "loading", error: "" });
   setStatus(`Generating ${result.title}...`, "Generating");
+  syncGenerationState();
 
   try {
-    const response = await fetch("/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: buildPrompt(result),
-        imageDataUrl: state.selfie,
-        aspectRatio: result.aspectRatio
-      })
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(data.detail || data.error || "Generation failed.");
-    }
-
-    if (!data.imageUrl) {
-      throw new Error("The model did not return an image.");
-    }
-
+    const data = await requestPreviewGeneration(result, selfieSnapshot);
+    if (state.selfie !== selfieSnapshot) return;
     updateResult(id, { status: "done", imageUrl: data.imageUrl, error: "" });
   } catch (error) {
+    if (state.selfie !== selfieSnapshot) return;
     updateResult(id, { status: "failed", error: error.message || "Generation failed." });
+  } finally {
+    if (activeGenerations.get(id) === generationToken) {
+      activeGenerations.delete(id);
+    }
+    syncGenerationState();
   }
+}
+
+async function requestPreviewGeneration(result, selfieSnapshot) {
+  const response = await fetch("/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: buildPrompt(result),
+      imageDataUrl: selfieSnapshot,
+      aspectRatio: result.aspectRatio
+    })
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data.detail || data.error || "Generation failed.");
+  }
+
+  if (!data.imageUrl) {
+    throw new Error("The model did not return an image.");
+  }
+
+  return data;
+}
+
+function createGenerationToken() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function syncGenerationState() {
+  state.generating = activeGenerations.size > 0;
+
+  const done = state.results.filter((result) => result.status === "done").length;
+  const failed = state.results.filter((result) => result.status === "failed").length;
+  const total = state.results.length;
+
+  if (state.generating) {
+    setStatus(`${activeGenerations.size} preview${activeGenerations.size === 1 ? "" : "s"} still generating. Finished images appear as soon as they return.`, "Generating");
+  } else if (done === total) {
+    setStatus("Gallery complete. Open any tile to compare with the original.", "Complete");
+  } else if (failed > 0) {
+    const firstFailure = state.results.find((result) => result.status === "failed" && result.error);
+    setStatus(`${failed} previews failed. ${firstFailure?.error || "You can retry them."}`, "Needs retry");
+  } else {
+    setStatus("Ready to generate previews.", "Ready");
+  }
+
+  render();
 }
 
 function buildPrompt(look) {
@@ -292,6 +318,7 @@ function render() {
   if (state.selfie) {
     elements.originalImage.src = state.selfie;
     elements.dialogOriginal.src = state.selfie;
+    elements.compareBefore.src = state.selfie;
   }
 
   renderFilters();
@@ -356,13 +383,14 @@ function renderProgress() {
   const done = state.results.filter((result) => result.status === "done").length;
   const loading = state.results.filter((result) => result.status === "loading").length;
   const failed = state.results.filter((result) => result.status === "failed").length;
+  const available = state.results.filter((result) => result.status !== "done" && !activeGenerations.has(result.id)).length;
   const total = state.results.length;
   const percent = Math.round((done / total) * 100);
 
   elements.progressCount.textContent = `${done}/${total}`;
   elements.progressBar.style.width = `${percent}%`;
-  elements.generateAll.disabled = state.generating || !state.selfie || done === total;
-  elements.retryFailed.disabled = state.generating || failed === 0;
+  elements.generateAll.disabled = !state.selfie || done === total || available === 0;
+  elements.retryFailed.disabled = failed === 0;
 
   if (loading > 0) {
     elements.progressText.textContent = "Generating";
@@ -386,9 +414,21 @@ function openResult(id) {
 
   state.selectedId = id;
   elements.dialogTitle.textContent = result.title;
+  elements.compareBefore.src = state.selfie;
+  elements.compareAfter.src = result.imageUrl;
   elements.dialogPreview.src = result.imageUrl;
+  elements.compareAfter.alt = `${result.title} generated preview`;
   elements.dialogPreview.alt = `${result.title} generated preview`;
+  elements.compareSlider.value = "50";
+  updateComparePosition();
   elements.dialog.showModal();
+}
+
+function updateComparePosition() {
+  const value = Number(elements.compareSlider.value);
+  const position = `${value}%`;
+  elements.compareAfterWrap.style.clipPath = `inset(0 ${100 - value}% 0 0)`;
+  elements.compareDivider.style.left = position;
 }
 
 function downloadSelected() {
@@ -410,6 +450,8 @@ function regenerateSelected() {
 }
 
 function resetForNewPhoto() {
+  activeGenerations.clear();
+  state.generating = false;
   state.selfie = "";
   state.results = looks.map((look) => ({ ...look, status: "idle", imageUrl: "", error: "" }));
   state.selectedId = "";
