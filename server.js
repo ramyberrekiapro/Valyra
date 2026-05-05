@@ -83,6 +83,7 @@ async function handleGenerate(request, response) {
   const prompt = String(body.prompt || "").trim();
   const imageDataUrl = String(body.imageDataUrl || "").trim();
   const aspectRatio = String(body.aspectRatio || "4:5");
+  const imageSize = String(process.env.OPENROUTER_IMAGE_SIZE || "").trim();
 
   if (!prompt) {
     sendJson(response, 400, { error: "Missing prompt" });
@@ -108,7 +109,7 @@ async function handleGenerate(request, response) {
     modalities: ["image", "text"],
     image_config: {
       aspect_ratio: aspectRatio,
-      image_size: "0.5K"
+      ...(imageSize ? { image_size: imageSize } : {})
     }
   };
 
@@ -133,14 +134,15 @@ async function handleGenerate(request, response) {
   }
 
   if (!openRouterResponse.ok) {
+    const detail = getOpenRouterErrorDetail(result, resultText);
     console.error("OpenRouter generation failed", {
       status: openRouterResponse.status,
-      detail: result?.error?.message || result?.message || resultText,
+      detail,
       metadata: result?.error?.metadata
     });
     sendJson(response, openRouterResponse.status, {
       error: "OpenRouter generation failed",
-      detail: result?.error?.message || result?.message || resultText
+      detail
     });
     return;
   }
@@ -182,6 +184,25 @@ function extractGeneratedImages(result) {
   }
 
   return [];
+}
+
+function getOpenRouterErrorDetail(result, fallback) {
+  const raw = result?.error?.metadata?.raw;
+
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      const providerMessage = parsed?.error?.message || parsed?.message;
+
+      if (providerMessage) {
+        return `${result?.error?.message || "Provider returned error"}: ${providerMessage}`;
+      }
+    } catch {
+      if (raw.trim()) return raw.trim();
+    }
+  }
+
+  return result?.error?.message || result?.message || fallback || "OpenRouter generation failed";
 }
 
 async function serveStatic(pathname, response) {
