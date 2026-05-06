@@ -1,6 +1,7 @@
 const MODEL = "google/gemini-3.1-flash-image-preview";
 const STORAGE_KEY = "valyra.session.v1";
-const MAX_UPLOAD_SIZE = 8 * 1024 * 1024;
+// Keep uploads small enough for typical serverless request body limits.
+const MAX_UPLOAD_SIZE = 3 * 1024 * 1024;
 
 const looks = [
   {
@@ -143,7 +144,7 @@ async function handleFile(file) {
   }
 
   if (file.size > MAX_UPLOAD_SIZE) {
-    setStatus("Choose an image under 8 MB for faster generation.", "Upload blocked");
+    setStatus("Choose an image under 3 MB so it can be sent to the AI generator.", "Upload blocked");
     return;
   }
 
@@ -164,7 +165,7 @@ async function handleFile(file) {
 async function resizeImage(file) {
   const rawDataUrl = await readFileAsDataUrl(file);
   const image = await loadImage(rawDataUrl);
-  const maxSide = 1280;
+  const maxSide = 1024;
   const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
   const width = Math.max(1, Math.round(image.width * scale));
   const height = Math.max(1, Math.round(image.height * scale));
@@ -177,7 +178,20 @@ async function resizeImage(file) {
   context.fillRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
 
-  return canvas.toDataURL("image/jpeg", 0.86);
+  let quality = 0.84;
+  let dataUrl = canvas.toDataURL("image/jpeg", quality);
+  const maxChars = 3_600_000;
+
+  while (dataUrl.length > maxChars && quality > 0.6) {
+    quality = Math.max(0.6, quality - 0.06);
+    dataUrl = canvas.toDataURL("image/jpeg", quality);
+  }
+
+  if (dataUrl.length > maxChars) {
+    throw new Error("That image is still too large after compression. Try a smaller photo.");
+  }
+
+  return dataUrl;
 }
 
 function readFileAsDataUrl(file) {
@@ -202,7 +216,7 @@ function generateLooks(targets) {
   if (!state.selfie || targets.length === 0) return;
 
   if (state.serverConfigured === false) {
-    setStatus("Add OPENROUTER_API_KEY to .env, restart the server, then generate the gallery.", "Setup needed");
+    setStatus("Set OPENROUTER_API_KEY in your hosting environment variables, then regenerate the gallery.", "Setup needed");
     return;
   }
 
@@ -524,7 +538,7 @@ async function checkServerHealth() {
 
     if (!data.configured) {
       state.serverConfigured = false;
-      setStatus("Add OPENROUTER_API_KEY to .env before generating real AI edits.", "Setup needed");
+      setStatus("Set OPENROUTER_API_KEY in your hosting environment variables before generating real AI edits.", "Setup needed");
     } else if (!state.selfie) {
       state.serverConfigured = true;
       setStatus(`Ready to generate with ${MODEL}.`, "Ready");
@@ -533,6 +547,6 @@ async function checkServerHealth() {
     }
   } catch {
     state.serverConfigured = false;
-    setStatus("Server health check failed. Restart the app server.", "Offline");
+    setStatus("Server health check failed. Check your deployment logs and try again.", "Offline");
   }
 }
